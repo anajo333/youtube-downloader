@@ -8,7 +8,4 @@ curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1000);
 curl_setopt($ch, CURLOPT_TIMEOUT, 1000);
 $output = curl_exec($ch);
-
-    if (curl_error($ch)) {
-        print 'Curl Error:' . curl_error($ch);
-    }
+print $output;
