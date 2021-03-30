@@ -5,7 +5,7 @@ curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 8.0; Windows 
 curl_setopt($ch, CURLOPT_MAXREDIRS, 10);
 curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 1000);
-curl_setopt($ch, CURLOPT_TIMEOUT, 1000);
+curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 $output = curl_exec($ch);
 print $output;
