@@ -85,11 +85,15 @@ function check_error_links($links){
     ];
   }
   $h200 = false;
+	$refused = [];
   foreach ($results as $keyx => $valuex) {
     if($valuex["content_length"] == 0){
+	$refused [] = $results[$keyx];
+	    
       unset($results[$keyx]);
       continue;
     }
+	  var_dump($refused);
       $h200 = true;
   }
   if(!$h200){
