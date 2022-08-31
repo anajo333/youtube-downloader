@@ -46,7 +46,6 @@ function check_error_links__v2($links){
 	$h200 = false;
 	foreach ($results as $keyx => $valuex) {
 		if($valuex["content_length"] == NULL){
-			var_dump($results[$keyx]);
 			unset($results[$keyx]);
 			continue;
 		}
