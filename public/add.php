@@ -93,7 +93,6 @@ function check_error_links($links){
       unset($results[$keyx]);
       continue;
     }
-	  var_dump($refused);
       $h200 = true;
   }
   if(!$h200){
