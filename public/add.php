@@ -18,11 +18,13 @@ die();
 
 function check_error_links__v2($links){
 	foreach ($links->getCombinedFormats() as $key => $value) {
-		$results [] = [
-			"url" => $value->url,
-			"format" => "mp4, video, ".$value->qualityLabel.", audio",
-			"content_length" => $value->contentLength,
-		];
+		if (strpos($value->mimeType, "video/mp4") !== false) {
+			$results [] = [
+				"url" => $value->url,
+				"format" => "mp4, video, ".$value->qualityLabel.", audio",
+				"content_length" => $value->contentLength,
+			];
+		}
 	}
 	foreach ($links->getVideoFormats() as $key => $value) {
 		$results [] = [
@@ -38,20 +40,77 @@ function check_error_links__v2($links){
 			"content_length" => $value->contentLength,
 		];
 	}
+
+	$results = check_valid_curl($results);
+
 	$h200 = false;
 	foreach ($results as $keyx => $valuex) {
 		if($valuex["content_length"] == NULL){
+			var_dump($results[$keyx]);
 			unset($results[$keyx]);
 			continue;
 		}
 		$h200 = true;
-  	}
+  }
+
+
+
+
 	if(!$h200){
 		print '<script type="text/javascript">alert("something wrong in your youtube link error code call the admin");</script>';
 	}
 	return $results;
 	
 }
+
+function check_valid_curl($results){
+  $curl_arr = array();
+  $master = curl_multi_init();
+
+  foreach($results as $key => $value) {
+  		if($value["content_length"] > 0){
+  			continue;
+  		}
+      $url = $value['url'];
+      $curl_arr[$key] = curl_init($url);
+      curl_setopt($curl_arr[$key], CURLOPT_RETURNTRANSFER, true);
+      curl_setopt($curl_arr[$key], CURLOPT_HEADER, true);
+      curl_setopt($curl_arr[$key], CURLOPT_NOBODY, true);
+      curl_setopt($curl_arr[$key], CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0)");
+      curl_setopt($curl_arr[$key], CURLOPT_SSL_VERIFYHOST, false);
+      curl_setopt($curl_arr[$key], CURLOPT_SSL_VERIFYPEER, false);
+      curl_setopt($curl_arr[$key], CURLOPT_MAXREDIRS, 10);
+      curl_setopt($curl_arr[$key], CURLOPT_CONNECTTIMEOUT, 20);
+      curl_setopt($curl_arr[$key], CURLOPT_TIMEOUT, 30);
+      curl_setopt($curl_arr[$key], CURLOPT_FOLLOWLOCATION, true);
+      curl_multi_add_handle($master, $curl_arr[$key]);
+  }
+  do {
+      curl_multi_exec($master,$running);
+  } while($running > 0);
+
+  foreach ($curl_arr as $key_node => $node) {
+      //$results[] = curl_multi_getcontent($node);
+      $resultsi[] = [
+      "url" => curl_getinfo($node, CURLINFO_EFFECTIVE_URL),
+      "content_length" => curl_getinfo($node, CURLINFO_CONTENT_LENGTH_DOWNLOAD),
+      "format" => $results[$key_node]["format"], //"format" => "mp4, video, 360p, audio",
+      "httpcode" => curl_getinfo($node, CURLINFO_HTTP_CODE) //"format" => "mp4, video, 360p, audio",
+    ];
+  }
+  foreach ($resultsi as $keyxx => $valuexx) {
+    if($valuexx["content_length"] == 0 AND $valuexx["httpcode"] == 503){
+      unset($results[$keyxx]);
+      continue;
+    }else{
+    	$results[$keyxx]["content_length"] = "{$valuexx['content_length']}";
+    }
+  }
+  return $results;
+}
+
+
+
 
 function check_error_links($links){
   $curl_arr = array();
@@ -81,14 +140,15 @@ function check_error_links($links){
       $results[] = [
       "url" => curl_getinfo($node, CURLINFO_EFFECTIVE_URL),
       "content_length" => curl_getinfo($node, CURLINFO_CONTENT_LENGTH_DOWNLOAD),
-      "format" => $links[$key_node]["format"] //"format" => "mp4, video, 360p, audio",
+      "format" => $links[$key_node]["format"], //"format" => "mp4, video, 360p, audio",
+      "httpcode" => curl_getinfo($node, CURLINFO_HTTP_CODE) //"format" => "mp4, video, 360p, audio",
     ];
   }
   $h200 = false;
 	$refused = [];
   foreach ($results as $keyx => $valuex) {
-    if($valuex["content_length"] == 0){
-	$refused [] = $results[$keyx];
+    if($valuex["content_length"] == 0 AND $valuex["httpcode"] == 503){
+			$refused [] = $results[$keyx];
 	    
       unset($results[$keyx]);
       continue;
