@@ -2,12 +2,13 @@
 
 namespace YouTube;
 
-use YouTube\Models\StreamFormat;
 use YouTube\Exception\TooManyRequestsException;
-use YouTube\Exception\VideoPlayerNotFoundException;
+use YouTube\Exception\VideoNotFoundException;
 use YouTube\Exception\YouTubeException;
 use YouTube\Models\VideoDetails;
+use YouTube\Models\YouTubeConfigData;
 use YouTube\Responses\GetVideoInfo;
+use YouTube\Responses\PlayerApiResponse;
 use YouTube\Responses\VideoPlayerJs;
 use YouTube\Responses\WatchVideoPage;
 use YouTube\Utils\Utils;
@@ -44,6 +45,7 @@ class YouTubeDownloader
         return [];
     }
 
+    // No longer working...
     public function getVideoInfo($video_id)
     {
         $video_id = Utils::extractVideoId($video_id);
@@ -52,7 +54,9 @@ class YouTubeDownloader
                 'html5' => 1,
                 'video_id' => $video_id,
                 'eurl' => 'https://youtube.googleapis.com/v/' . $video_id,
-                'el' => 'embedded' // or detailpage. default: embedded, will fail if video is not embeddable
+                'el' => 'embedded', // or detailpage. default: embedded, will fail if video is not embeddable
+                'c' => 'TVHTML5',
+                'cver' => '6.20180913'
             ]));
 
         return new GetVideoInfo($response);
@@ -85,46 +89,38 @@ class YouTubeDownloader
      */
     public function parseLinksFromPlayerResponse($player_response, VideoPlayerJs $player)
     {
-        $js_code = $player->getResponseBody();
+        return [];
+    }
 
-        $formats = Utils::arrayGet($player_response, 'streamingData.formats', []);
+    protected function getPlayerApiResponse($video_id, YouTubeConfigData $configData)
+    {
+        // $api_key = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 
-        // video only or audio only streams
-        $adaptiveFormats = Utils::arrayGet($player_response, 'streamingData.adaptiveFormats', []);
+        // exact params matter, because otherwise "slow" download links will be returned
+        $response = $this->client->post("https://www.youtube.com/youtubei/v1/player?key=" . $configData->getApiKey(), json_encode([
+            "context" => [
+                "client" => [
+                    "clientName" => "ANDROID",
+                    "clientVersion" => "16.20",
+                    "hl" => "en"
+                ]
+            ],
+            "videoId" => $video_id,
+            "playbackContext" => [
+                "contentPlaybackContext" => [
+                    "html5Preference" => "HTML5_PREF_WANTS"
+                ]
+            ],
+            "contentCheckOk" => true,
+            "racyCheckOk" => true
+        ]), [
+            'Content-Type' => 'application/json',
+            'X-Goog-Visitor-Id' => $configData->getGoogleVisitorId(),
+            'X-Youtube-Client-Name' => $configData->getClientName(),
+            'X-Youtube-Client-Version' => $configData->getClientVersion()
+        ]);
 
-        $formats_combined = array_merge($formats, $adaptiveFormats);
-
-        // final response
-        $return = array();
-
-        foreach ($formats_combined as $format) {
-
-            // appear as either "cipher" or "signatureCipher"
-            $cipher = Utils::arrayGet($format, 'cipher', Utils::arrayGet($format, 'signatureCipher', ''));
-
-            // some videos do not need to be decrypted!
-            if (isset($format['url'])) {
-                $return[] = new StreamFormat($format);
-                continue;
-            }
-
-            $cipherArray = Utils::parseQueryString($cipher);
-
-            $url = Utils::arrayGet($cipherArray, 'url');
-            $sp = Utils::arrayGet($cipherArray, 'sp'); // used to be 'sig'
-            $signature = Utils::arrayGet($cipherArray, 's');
-
-            $decoded_signature = (new SignatureDecoder())->decode($signature, $js_code);
-
-            $decoded_url = $url . '&' . $sp . '=' . $decoded_signature;
-
-            $streamUrl = new StreamFormat($format);
-            $streamUrl->url = $decoded_url;
-
-            $return[] = $streamUrl;
-        }
-
-        return $return;
+        return new PlayerApiResponse($response);
     }
 
     /**
@@ -138,34 +134,33 @@ class YouTubeDownloader
     {
         $page = $this->getPage($video_id);
 
+        $video_id = Utils::extractVideoId($video_id);
+
         if ($page->isTooManyRequests()) {
             throw new TooManyRequestsException($page);
-        } else if (!$page->isStatusOkay()) {
-            throw new YouTubeException('Video not found');
+        } elseif (!$page->isStatusOkay()) {
+            throw new YouTubeException('Page failed to load. HTTP error: ' . $page->getResponse()->error);
+        } elseif ($page->isVideoNotFound()) {
+            throw new VideoNotFoundException();
         }
 
-        // get JSON encoded parameters that appear on video pages
-        $player_response = $page->getPlayerResponse();
+        $youtube_config_data = $page->getYouTubeConfigData();
 
-        // it may ask you to "Sign in to confirm your age"
-        // we can bypass that by querying /get_video_info
-        if (!$page->hasPlayableVideo()) {
-            $player_response = $this->getVideoInfo($video_id)->getPlayerResponse();
-        }
-
-        if (empty($player_response)) {
-            throw new VideoPlayerNotFoundException();
-        }
+        // the most reliable way of fetching all download links no matter what
+        $player_response = $this->getPlayerApiResponse($video_id, $youtube_config_data);
 
         // get player.js location that holds signature function
         $player_url = $page->getPlayerScriptUrl();
         $response = $this->getBrowser()->cachedGet($player_url);
         $player = new VideoPlayerJs($response);
 
-        $links = $this->parseLinksFromPlayerResponse($player_response, $player);
+        $parser = PlayerResponseParser::createFrom($player_response);
+        $parser->setPlayerJsResponse($player);
+
+        $links = $parser->parseLinks();
 
         // since we already have that information anyways...
-        $info = VideoDetails::fromPlayerResponseArray($player_response);
+        $info = VideoDetails::fromPlayerResponseArray($player_response->getJson());
 
         return new DownloadOptions($links, $info);
     }

@@ -11,11 +11,39 @@ class Utils
      */
     public static function extractVideoId($str)
     {
-        if (preg_match('/[a-z0-9_-]{11}/i', $str, $matches)) {
-            return $matches[0];
+        if (strlen($str) === 11) {
+            return $str;
+        }
+
+        if (preg_match('/(?:\/|%3D|v=|vi=)([a-z0-9_-]{11})(?:[%#?&]|$)/ui', $str, $matches)) {
+            return $matches[1];
         }
 
         return false;
+    }
+
+    /**
+     * Will parse either channel ID or username from custom URL.
+     * Will not parse legacy usernames as those cannot be queried via YouTube API
+     * https://support.google.com/youtube/answer/6180214?hl=en
+     * @param $url
+     * @return mixed|null
+     */
+    public static function extractChannel($url)
+    {
+        if (strpos($url, 'UC') === 0 && strlen($url) == 24) {
+            return $url;
+        }
+
+        if (preg_match('/channel\/(UC[\w-]{22})/', $url, $matches)) {
+            return $matches[1];
+        }
+
+        if (preg_match('/\/c\/(\w+)/i', $url, $matches)) {
+            return $matches[1];
+        }
+
+        return null;
     }
 
     public static function arrayGet($array, $key, $default = null)
@@ -63,5 +91,14 @@ class Utils
         }
 
         return $url;
+    }
+
+    public static function getInputValueByName($html, $name)
+    {
+        if (preg_match("/name=(['\"]){$name}\\1[^>]+value=(['\"])(.*?)\\2/is", $html, $matches)) {
+            return $matches[3];
+        }
+
+        return null;
     }
 }
